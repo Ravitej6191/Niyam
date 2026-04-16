@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1003970591923",
+    "project_id": "niyam-8aa0f",
+    "storage_bucket": "niyam-8aa0f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1003970591923:android:523e0d6a7a2bf6a3b244c6",
+        "android_client_info": {
+          "package_name": "com.niyam.productivityapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1003970591923-02dnfkq7t737m15doja46vfjldvqs03k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBn9TjZHhSgOU0utnC1CLpUC4ttwG2zqmo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1003970591923-02dnfkq7t737m15doja46vfjldvqs03k.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

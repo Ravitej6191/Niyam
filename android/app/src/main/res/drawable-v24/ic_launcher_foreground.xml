@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground — Niyam "N" lettermark.
+  Canvas: 108dp × 108dp.
+  Safe zone: inscribed circle, radius 36dp from centre (54,54).
+  Path corners at (34,34)…(74,74): √(20²+20²) ≈ 28.3dp from centre.
+  + half-stroke 4dp = 32.3dp  ✓  (3.7dp inside safe zone)
+  Dot (r=6) at (74,34): 28.3 + 6 = 34.3dp  ✓
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- N lettermark: bottom-left → top-left → bottom-right → top-right -->
+    <path
+        android:pathData="M34,74 L34,34 L74,74 L74,34"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Dot glow ring at top-right corner of N (radius 6) -->
+    <path
+        android:pathData="M74,34 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+        android:fillColor="#4DFFFFFF"/>
+
+    <!-- Dot solid centre (radius 4) -->
+    <path
+        android:pathData="M74,34 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
+        android:fillColor="#FFFFFF"/>
+
+</vector>
