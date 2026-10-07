@@ -5,7 +5,8 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { auth, loadUserData, saveUserData, deleteUserData } from './firebase';
+import { auth, loadUserData, saveUserData, deleteUserData, CloudConflictError, CloudTooLargeError } from './firebase';
+import { mergeStates, largestPart, WARN_DOC_BYTES } from './utils/sync';
 import { computeLifetimeXP } from './xp';
 import { toast } from 'sonner';
 import { ThemeProvider } from './components/ThemeProvider';
@@ -25,6 +26,7 @@ import Reminders from './components/Reminders';
 import MoodTracker from './components/MoodTracker';
 import BreathingExercise from './components/BreathingExercise';
 import JournalTracker from './components/JournalTracker';
+import { DEFAULT_APP_STATE, migrateData } from './utils/migrate';
 import PinLock, { isPinSet, removePin } from './components/PinLock';
 import { checkBiometricAvailable, isBiometricEnabled, promptBiometric, setBiometricEnabled } from './utils/biometric';
 
@@ -206,97 +208,6 @@ export interface AppState {
   lastSeenAchievements: number;
 }
 
-const DEFAULT_JOURNAL_TASKS: JournalTask[] = [
-  { id: 'eat_healthy',    label: 'Eat healthy',    emoji: '🥗', isDefault: true, active: true },
-  { id: 'meditate',       label: 'Meditate',       emoji: '🧘', isDefault: true, active: true },
-  { id: 'stay_hydrated',  label: 'Stay hydrated',  emoji: '💧', isDefault: true, active: true },
-  { id: 'read',           label: 'Read a book',    emoji: '📚', isDefault: true, active: true },
-  { id: 'exercise',       label: 'Exercise',       emoji: '🏃', isDefault: true, active: true },
-];
-
-const DEFAULT_APP_STATE: AppState = {
-  habits: [],
-  expenses: [],
-  budgets: [],
-  notes: [],
-  savedCounts: [],
-  focusSessions: [],
-  reminders: [],
-  moods: [],
-  breathingSessions: [],
-  journalLogs: [],
-  journalSettings: {
-    reminderEnabled: false,
-    reminderTime: '21:30',
-    tasks: DEFAULT_JOURNAL_TASKS,
-  },
-  lastSeenAchievements: 0,
-  userProfile: {
-    name: 'User',
-    avatar: 'default',
-    joinDate: new Date().toISOString(),
-    bio: '',
-    location: '',
-    preferences: { notifications: true, language: 'en', currency: 'INR' },
-  },
-  settings: {
-    theme: 'system',
-    fontSize: 'medium',
-    currency: 'INR',
-    language: 'en',
-    notifications: { habits: true, budgets: true, reminders: true, achievements: true },
-    privacy: { analytics: false, crashReports: true, dataSharing: false },
-    advanced: { autoBackup: false, compactView: false, animations: true },
-  },
-};
-
-function migrateData(savedData: any): AppState {
-  const migrated = { ...DEFAULT_APP_STATE };
-  migrated.habits = (savedData.habits || []).map((h: any) => ({ ...h, bestStreak: h.bestStreak ?? h.streak ?? 0 }));
-  migrated.expenses = savedData.expenses || [];
-  migrated.budgets = savedData.budgets || [];
-  migrated.notes = savedData.notes || [];
-  migrated.savedCounts = savedData.savedCounts || [];
-  migrated.focusSessions = savedData.focusSessions || [];
-  migrated.reminders = savedData.reminders || [];
-  migrated.moods = savedData.moods || [];
-  migrated.breathingSessions = savedData.breathingSessions || [];
-  migrated.journalLogs = savedData.journalLogs || [];
-  migrated.journalSettings = savedData.journalSettings
-    ? { ...DEFAULT_APP_STATE.journalSettings, ...savedData.journalSettings,
-        tasks: savedData.journalSettings.tasks?.length
-          ? savedData.journalSettings.tasks
-          : DEFAULT_JOURNAL_TASKS }
-    : DEFAULT_APP_STATE.journalSettings;
-  migrated.lastSeenAchievements = savedData.lastSeenAchievements ?? 0;
-  if (savedData.userProfile) {
-    migrated.userProfile = {
-      name: savedData.userProfile.name || 'User',
-      avatar: savedData.userProfile.avatar || 'default',
-      joinDate: savedData.userProfile.joinDate || new Date().toISOString(),
-      bio: savedData.userProfile.bio || '',
-      location: savedData.userProfile.location || '',
-      preferences: {
-        notifications: savedData.userProfile.preferences?.notifications ?? true,
-        language: savedData.userProfile.preferences?.language || 'en',
-        currency: savedData.userProfile.preferences?.currency || 'INR',
-      },
-    };
-  }
-  if (savedData.settings) {
-    migrated.settings = {
-      theme: savedData.settings.theme || 'system',
-      fontSize: savedData.settings.fontSize || 'medium',
-      currency: savedData.settings.currency || 'INR',
-      language: savedData.settings.language || 'en',
-      notifications: { habits: true, budgets: true, reminders: true, achievements: true, ...savedData.settings.notifications },
-      privacy: { analytics: false, crashReports: true, dataSharing: false, ...savedData.settings.privacy },
-      advanced: { autoBackup: false, compactView: false, animations: true, ...savedData.settings.advanced },
-    };
-  }
-  return migrated;
-}
-
 export const ALL_ACHIEVEMENTS: AchievementDef[] = [
   // ── XP Milestones ─────────────────────────────────────────────────────────
   { id: 'xp_100',  title: 'First Spark', description: 'Earned 100 lifetime XP',   icon: 'zap',          color: '#C9935A', category: 'xp', check: s => s.totalXP >= 100   },
@@ -366,6 +277,12 @@ function AppContent() {
   const isInBackground      = useRef(false); // true only after app has gone to background once
   const biometricInProgress = useRef(false); // prevents duplicate native prompts
   const lastSaveErrorRef    = useRef(0);     // throttle Firestore save-fail toasts
+  const cloudRevRef         = useRef(0);     // cloud revision this device last loaded/saved (optimistic concurrency)
+  const saveChainRef        = useRef<Promise<void>>(Promise.resolve()); // serialises cloud writes
+  const offlineFallbackRef  = useRef(false); // state came from the local copy because the cloud load failed
+  const sizeWarnedRef       = useRef(false);
+  const [cloudLoadFailed, setCloudLoadFailed] = useState(false);
+  const [syncTick, setSyncTick] = useState(0); // bumped when connectivity returns to re-push the latest state
 
   const currentScreenRef   = useRef(currentScreen);
   useEffect(() => { currentScreenRef.current = currentScreen; }, [currentScreen]);
@@ -403,7 +320,7 @@ function AppContent() {
 
   useEffect(() => {
     const OTHER_TABS = ['journal', 'achievements', 'account'];
-    let handle: any;
+    let handle: { remove: () => Promise<void> } | undefined;
     CapApp.addListener('backButton', () => {
       const screen = currentScreenRef.current;
       if (screen === 'home') {
@@ -419,7 +336,113 @@ function AppContent() {
       }
     }).then(h => { handle = h; });
     return () => { handle?.remove(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
+
+  // ── Cloud sync helpers ──────────────────────────────────────────────────────
+  // These only touch refs and state setters, so effects may safely capture any render's copy.
+
+  /**
+   * Write `state` to the cloud, serialised with other writes. On a revision conflict
+   * (another device saved first) reload, merge and retry instead of overwriting.
+   */
+  const pushToCloud = (uid: string, state: AppState): Promise<void> => {
+    const run = async () => {
+      let toSave = state;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          cloudRevRef.current = await saveUserData(uid, toSave, cloudRevRef.current);
+          return;
+        } catch (e) {
+          if (!(e instanceof CloudConflictError)) throw e;
+          const snap = await loadUserData(uid);
+          cloudRevRef.current = snap?.rev ?? 0;
+          if (snap) {
+            const remote = migrateData(snap.data);
+            toSave = mergeStates(remote, toSave);
+            // functional update so edits made while we were syncing aren't dropped
+            setAppState(prev => mergeStates(remote, prev));
+          }
+        }
+      }
+      throw new Error('Cloud sync conflict could not be resolved');
+    };
+    const next = saveChainRef.current.then(run, run);
+    saveChainRef.current = next.catch(() => {});
+    return next;
+  };
+
+  /**
+   * Load the signed-in user's data. Returns true when the cloud is now the source of truth.
+   * On failure it returns false and cloud writes stay disabled — otherwise an empty/stale
+   * local state would overwrite the real cloud data.
+   */
+  const loadCloudState = async (user: User): Promise<boolean> => {
+    try {
+      const snap = await loadUserData(user.uid);
+      const googleFirstName = user.displayName?.split(' ')[0] || '';
+      if (snap) {
+        cloudRevRef.current = snap.rev;
+        const remote = migrateData(snap.data);
+        const needsName = !remote.userProfile.name || remote.userProfile.name === 'User';
+        if (needsName && googleFirstName) remote.userProfile.name = googleFirstName;
+        // Coming back from offline mode → keep what was entered locally; otherwise cloud wins
+        if (offlineFallbackRef.current) setAppState(prev => mergeStates(remote, prev));
+        else setAppState(remote);
+      } else {
+        // First-ever sign-in (no cloud data) → start fresh, pre-fill name from Google
+        cloudRevRef.current = 0;
+        const fresh: AppState = {
+          ...DEFAULT_APP_STATE,
+          userProfile: {
+            ...DEFAULT_APP_STATE.userProfile,
+            name: googleFirstName || 'User',
+            avatar: user.photoURL || 'default',
+            joinDate: new Date().toISOString(),
+          },
+        };
+        if (offlineFallbackRef.current) setAppState(prev => mergeStates(fresh, prev));
+        else setAppState(fresh);
+      }
+      offlineFallbackRef.current = false;
+      setCloudLoadFailed(false);
+      return true;
+    } catch (e) {
+      console.warn('[Firebase] Firestore load failed, using local copy and retrying:', e);
+      if (!offlineFallbackRef.current) {
+        offlineFallbackRef.current = true;
+        const localRaw = localStorage.getItem('niyamAppData');
+        if (localRaw) {
+          try { setAppState(migrateData(JSON.parse(localRaw))); } catch {}
+        }
+        toast.error("Couldn't reach the cloud — working offline, will sync when reconnected");
+      }
+      setCloudLoadFailed(true);
+      return false;
+    }
+  };
+
+  const resetCloudBookkeeping = () => {
+    cloudRevRef.current = 0;
+    offlineFallbackRef.current = false;
+    sizeWarnedRef.current = false;
+    setCloudLoadFailed(false);
+  };
+
+  // Retry a failed cloud load every 15s and as soon as the network comes back
+  useEffect(() => {
+    if (!cloudLoadFailed || !firebaseUser) return;
+    const retry = async () => { if (await loadCloudState(firebaseUser)) setCloudSynced(true); };
+    const id = setInterval(retry, 15_000);
+    window.addEventListener('online', retry);
+    return () => { clearInterval(id); window.removeEventListener('online', retry); };
+  }, [cloudLoadFailed, firebaseUser]);  
+
+  // When connectivity returns, push the latest state again (failed saves aren't queued)
+  useEffect(() => {
+    const onOnline = () => setSyncTick(t => t + 1);
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   // ── Save immediately when app goes to background ────────────────────────────
   // The debounced save (1500ms) might not fire before Android suspends the app.
@@ -430,7 +453,7 @@ function AppContent() {
       if (isActive) {
         // Only re-lock when genuinely returning from background (not initial launch)
         // and not while a biometric prompt is already showing (dialog causes its own events)
-        if (isInBackground.current && !biometricInProgress.current && cloudSyncedRef.current) {
+        if (isInBackground.current && !biometricInProgress.current && (firebaseUserRef.current || isGuestRef.current)) {
           isInBackground.current = false;
           if (isPinSet() || isBiometricEnabled()) {
             setPinLocked(true);
@@ -460,11 +483,11 @@ function AppContent() {
       }
       // Best-effort Firestore save (may or may not complete before suspension)
       if (synced && user) {
-        saveUserData(user.uid, state).catch(() => {});
+        pushToCloud(user.uid, state).catch(() => {});
       }
     }).then(h => { rm = () => h.remove(); });
     return () => rm?.();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── Firebase auth listener ──────────────────────────────────────────────────
   useEffect(() => {
@@ -473,49 +496,15 @@ function AppContent() {
       setAuthReady(true);
 
       if (user) {
-        // ── Load from Firestore ──────────────────────────────────────────────
-        try {
-          const cloudData = await loadUserData(user.uid);
-          const googleFirstName = user.displayName?.split(' ')[0] || '';
-          if (cloudData) {
-            // Cloud has data → use it as source of truth
-            const migrated = migrateData(cloudData);
-            // If name is still the default placeholder, auto-fill from Google
-            const needsName = !migrated.userProfile.name || migrated.userProfile.name === 'User';
-            if (needsName && googleFirstName) {
-              migrated.userProfile.name = googleFirstName;
-              await saveUserData(user.uid, migrated);
-            }
-            setAppState(migrated);
-          } else {
-            // First-ever sign-in (no cloud data) → start fresh, pre-fill name from Google
-            const fresh: AppState = {
-              ...DEFAULT_APP_STATE,
-              userProfile: {
-                ...DEFAULT_APP_STATE.userProfile,
-                name: googleFirstName || 'User',
-                avatar: user.photoURL || 'default',
-                joinDate: new Date().toISOString(),
-              },
-            };
-            setAppState(fresh);
-            await saveUserData(user.uid, fresh);
-          }
-        } catch (e) {
-          console.warn('[Firebase] Firestore load failed, falling back to localStorage:', e);
-          const localRaw = localStorage.getItem('niyamAppData');
-          if (localRaw) {
-            try { setAppState(migrateData(JSON.parse(localRaw))); } catch {}
-          }
-        }
-        setCloudSynced(true);
+        if (await loadCloudState(user)) setCloudSynced(true);
       } else {
         // Logged out — clear cloud sync flag
         setCloudSynced(false);
+        resetCloudBookkeeping();
       }
     });
     return () => unsubscribe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── Transition out of splash ────────────────────────────────────────────────
   useEffect(() => {
@@ -544,22 +533,40 @@ function AppContent() {
   useEffect(() => {
     if (!cloudSynced || !firebaseUser) return;
     const id = setTimeout(async () => {
+      // Local copy first: synchronous, and survives a failed or slow cloud write
+      try { localStorage.setItem('niyamAppData', JSON.stringify(appState)); } catch {}
+
+      const big = largestPart(appState);
+      if (big.bytes > WARN_DOC_BYTES && !sizeWarnedRef.current) {
+        sizeWarnedRef.current = true;
+        toast.warning(`Your ${big.key} are nearly too large to sync. Export a backup and delete old entries.`, { duration: 8000 });
+      }
+
       try {
-        await saveUserData(firebaseUser.uid, appState);
-        localStorage.setItem('niyamAppData', JSON.stringify(appState));
+        await pushToCloud(firebaseUser.uid, appState);
       } catch (e) {
         console.warn('[Firebase] Firestore save failed:', e);
-        try { localStorage.setItem('niyamAppData', JSON.stringify(appState)); } catch {}
         // Show toast at most once per 60s so offline users aren't spammed
         const now = Date.now();
         if (now - lastSaveErrorRef.current > 60_000) {
           lastSaveErrorRef.current = now;
-          toast.error('Sync failed — data saved locally');
+          toast.error(e instanceof CloudTooLargeError
+            ? `Can't sync: ${e.part} is too large. Data is saved on this device only.`
+            : 'Sync failed — data saved locally');
         }
       }
     }, 1500);
     return () => clearTimeout(id);
-  }, [appState, cloudSynced, firebaseUser]);
+  }, [appState, cloudSynced, firebaseUser, syncTick]);  
+
+  // ── Offline mode: cloud load failed, so keep edits in the local copy only ─────
+  useEffect(() => {
+    if (!cloudLoadFailed || !firebaseUser || cloudSynced) return;
+    const id = setTimeout(() => {
+      try { localStorage.setItem('niyamAppData', JSON.stringify(appState)); } catch {}
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [appState, cloudLoadFailed, cloudSynced, firebaseUser]);
 
   // ── Save guest data to localStorage only ────────────────────────────────────
   useEffect(() => {
@@ -573,10 +580,17 @@ function AppContent() {
   // ── Pull-to-refresh handler ─────────────────────────────────────────────────
   const handleRefresh = async () => {
     if (!firebaseUser || !cloudSynced) return;
-    const cloudData = await loadUserData(firebaseUser.uid);
-    if (cloudData) {
-      setAppState(migrateData(cloudData));
-      toast.success('Synced');
+    try {
+      // Flush pending local edits first so the reload can't discard them
+      await pushToCloud(firebaseUser.uid, appStateRef.current);
+      const snap = await loadUserData(firebaseUser.uid);
+      if (snap) {
+        cloudRevRef.current = snap.rev;
+        setAppState(migrateData(snap.data));
+        toast.success('Synced');
+      }
+    } catch {
+      toast.error("Couldn't sync — check your connection");
     }
   };
 
@@ -641,6 +655,7 @@ function AppContent() {
       setActiveTab('home');
       setModuleStack([]);
       setCloudSynced(false);
+      resetCloudBookkeeping();
     } catch (e) {
       console.warn('Sign out error:', e);
     }
@@ -690,6 +705,7 @@ function AppContent() {
     // 5. Reset in-memory state and navigate to login
     setAppState(DEFAULT_APP_STATE);
     setCloudSynced(false);
+    resetCloudBookkeeping();
     setCurrentScreen('home');
     setActiveTab('home');
     setModuleStack([]);
@@ -730,7 +746,7 @@ function AppContent() {
       if (ach) toast.success(`Achievement unlocked: ${ach.title}`, { duration: 4000 });
     });
     prevUnlockedRef.current = currentUnlocked;
-  }, [stats, appState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stats, appState]);  
 
   const isTabScreen = ['home', 'journal', 'achievements', 'account'].includes(currentScreen);
   const newAchievements = Math.max(0, stats.achievementsUnlocked - appState.lastSeenAchievements);
@@ -758,8 +774,8 @@ function AppContent() {
     );
   }
 
-  // 3. Logged-in / guest user, PIN / biometric locked (guests are never pin-locked)
-  if (pinLocked && !isGuest) {
+  // 3. Logged-in / guest user, PIN / biometric locked
+  if (pinLocked) {
     const bioActive = isBiometricEnabled() && biometricSupported;
     return (
       <>

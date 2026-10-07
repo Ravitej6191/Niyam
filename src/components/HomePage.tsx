@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Zap, CreditCard, FileText, Hash, Headphones, Bell,
   Flame, CheckCircle2, AlertTriangle, ChevronRight,
-  Clock, Leaf, TrendingUp, Star, ArrowUpRight, Smile, Wind, RefreshCw, BookOpen,
+  Clock, TrendingUp, Star, ArrowUpRight, Smile, Wind, RefreshCw, BookOpen,
 } from 'lucide-react';
 import { hapticTap } from '../utils/haptic';
 import type { Screen, AppState, AppStats } from '../App';
@@ -32,15 +32,18 @@ function useWeather(): WeatherState {
     (async () => {
       try {
         // Request permission (shows native dialog on Android)
-        const perm = await Geolocation.requestPermissions();
-        if (perm.location !== 'granted') { setWeather({ status: 'error' }); return; }
+        const perm = await Geolocation.requestPermissions({ permissions: ['coarseLocation'] });
+        if (perm.coarseLocation !== 'granted') { setWeather({ status: 'error' }); return; }
 
-        const pos = await Geolocation.getCurrentPosition({ timeout: 8000, maximumAge: 300_000 });
-        const { latitude: lat, longitude: lon } = pos.coords;
+        // Coarse fix is plenty for weather + city name
+        const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 8000, maximumAge: 300_000 });
+        // Privacy: round to 2 decimals (~1 km) before sending to third-party services
+        const lat = Math.round(pos.coords.latitude * 100) / 100;
+        const lon = Math.round(pos.coords.longitude * 100) / 100;
 
         const [wRes, gRes] = await Promise.all([
           fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m`),
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`),
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`),
         ]);
         const wData = await wRes.json();
         const gData = await gRes.json();
@@ -710,7 +713,7 @@ function MedCard({ mod, value, onClick, delay }: {
           <Icon size={20} color="white" strokeWidth={2.5}/>
         </div>
         <p style={{ fontSize: '0.9375rem', fontWeight: 700, color: mod.textColor, marginBottom: '0.2rem', letterSpacing: '-0.01em' }}>{mod.title}</p>
-        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: mod.subColor, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{value}</p>
+        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: mod.subColor, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>{value}</p>
       </div>
     </motion.div>
   );

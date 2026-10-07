@@ -114,7 +114,7 @@ export default function FocusTracker({ sessions, onUpdate, onBack }: FocusTracke
       }
     } catch { /* ignore corrupt draft */ }
     localStorage.removeItem(FOCUS_DRAFT_KEY);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── Countdown — pure updater with no side effects inside ────────────────────
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function FocusTracker({ sessions, onUpdate, onBack }: FocusTracke
     onUpdateRef.current([newSession, ...sessionsRef.current]);
     hapticSuccess();
     toast.success('Focus session complete! +5 XP');
-  }, [timerState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [timerState]);  
 
   // ── Timer controls ──────────────────────────────────────────────────────────
   const startTimer = () => {
@@ -264,7 +264,8 @@ export default function FocusTracker({ sessions, onUpdate, onBack }: FocusTracke
   const _backRef = useRef<() => void>(() => {});
   useEffect(() => {
     _backRef.current = () => {
-      viewRef.current === 'timer' ? handleTimerBack() : onBack();
+      if (viewRef.current === 'timer') handleTimerBack();
+      else onBack();
     };
   });
   useEffect(() => {
@@ -272,7 +273,7 @@ export default function FocusTracker({ sessions, onUpdate, onBack }: FocusTracke
     App.addListener('backButton', () => _backRef.current())
       .then(h => { rm = () => h.remove(); });
     return () => rm?.();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── App foreground/background handling ──────────────────────────────────────
   // Android throttles setInterval in backgrounded WebViews, so when the app
@@ -295,7 +296,7 @@ export default function FocusTracker({ sessions, onUpdate, onBack }: FocusTracke
       }
     }).then(h => { rm = () => h.remove(); });
     return () => rm?.();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   const progress   = totalSec > 0 ? ((totalSec - secondsLeft) / totalSec) * 100 : 0;
   const circ       = 2 * Math.PI * 90;

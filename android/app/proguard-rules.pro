@@ -19,3 +19,17 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ── Niyam ────────────────────────────────────────────────────────────────────
+# Capacitor discovers plugins and bridge methods by reflection/annotation.
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin public class * { @com.getcapacitor.annotation.PermissionCallback <methods>; @com.getcapacitor.annotation.ActivityCallback <methods>; @com.getcapacitor.PluginMethod public <methods>; }
+-keep class com.niyam.productivityapp.** { *; }
+-keep class com.getcapacitor.community.** { *; }
+-keep class io.capawesome.** { *; }
+-keep class com.capacitorjs.plugins.** { *; }
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+# Readable crash traces
+-keepattributes SourceFile,LineNumberTable,*Annotation*
+-renamesourcefileattribute SourceFile
+-dontwarn com.getcapacitor.**

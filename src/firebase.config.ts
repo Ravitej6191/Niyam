@@ -1,14 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP: Fill in the 6 values below from your Firebase project.
+// Firebase web app configuration.
 //
-// How to get them:
-//   1. Go to https://console.firebase.google.com
-//   2. Open your project → click the gear icon → "Project settings"
-//   3. Scroll to "Your apps" → click your Web app (</> icon)
-//      (If you haven't added a web app yet, click "Add app" → Web)
-//   4. Under "SDK setup and configuration" → choose "Config"
-//   5. Copy each value below.
-// ─────────────────────────────────────────────────────────────────────────────
+// These values identify the Firebase project; they are not secrets (they ship in every
+// build). Access control is enforced by Firestore security rules — see /firestore.rules
+// — so keep those deployed:  firebase deploy --only firestore:rules
+//
+// To point the app at a different project: Firebase console → Project settings →
+// Your apps → Web app → SDK setup and configuration → Config.
 export const firebaseConfig = {
   apiKey: "AIzaSyD_H6B52-e9gBrmFUBZWAaUZUjRTEOgnNY",
   authDomain: "niyam-8aa0f.firebaseapp.com",
@@ -18,4 +15,3 @@ export const firebaseConfig = {
   appId: "1:1003970591923:web:9cc301b2ef39bb20b244c6",
   measurementId: "G-78X4FHM5K2"
 };
-

@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { toast } from 'sonner';
 import type { Note } from '../App';
+import { hashSecret, checkSecret, parseSecretRecord } from '../utils/secret';
 
 interface NotesProps {
   notes: Note[];
@@ -14,18 +15,30 @@ interface NotesProps {
 
 const TITLE_MAX = 100;
 const CONTENT_MAX = 10000;
-// Simple obfuscation for password storage (not true encryption, but prevents casual reading)
-const encode = (s: string) => btoa(encodeURIComponent(s));
-const decode = (s: string) => { try { return decodeURIComponent(atob(s)); } catch { return null; } };
+// Note passwords are stored as salted PBKDF2 hashes (never the password itself).
+// This is a UI gate: note text is not encrypted at rest.
+// Legacy entries (base64 of the password) are upgraded on the next successful unlock.
+const pwKey = (id: string) => 'npw_' + id;
+const decodeLegacy = (s: string) => { try { return decodeURIComponent(atob(s)); } catch { return null; } };
 
-function getPw(id: string): string | null {
-  try { const v = localStorage.getItem('npw_' + id); return v ? decode(v) : null; } catch { return null; }
+function hasPw(id: string): boolean {
+  try { return localStorage.getItem(pwKey(id)) !== null; } catch { return false; }
 }
-function setPw(id: string, pw: string | null) {
-  try { pw === null ? localStorage.removeItem('npw_' + id) : localStorage.setItem('npw_' + id, encode(pw)); } catch {}
+function clearPw(id: string) {
+  try { localStorage.removeItem(pwKey(id)); } catch {}
 }
-function hasPw(id: string) { return getPw(id) !== null; }
-function checkPw(id: string, pw: string) { const s = getPw(id); return s !== null && s === pw; }
+async function setPw(id: string, pw: string) {
+  try { localStorage.setItem(pwKey(id), JSON.stringify(await hashSecret(pw))); } catch {}
+}
+async function checkPw(id: string, pw: string): Promise<boolean> {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(pwKey(id)); } catch { return false; }
+  if (raw === null) return false;
+  const record = parseSecretRecord(raw);
+  if (record) return checkSecret(pw, record);
+  if (decodeLegacy(raw) === pw) { await setPw(id, pw); return true; }
+  return false;
+}
 
 type View = 'list' | 'editor';
 
@@ -139,7 +152,7 @@ export default function Notes({ notes, onUpdate, onBack }: NotesProps) {
   const deleteNote = (noteId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     const prevNotes = [...notes];
-    setPw(noteId, null);
+    clearPw(noteId);
     onUpdate(notes.filter(n => n.id !== noteId));
     toast.success('Note deleted', {
       action: { label: 'Undo', onClick: () => onUpdate(prevNotes) },
@@ -168,14 +181,14 @@ export default function Notes({ notes, onUpdate, onBack }: NotesProps) {
     setPwModal({ open: true, mode, noteId });
   };
 
-  const submitPassword = () => {
+  const submitPassword = async () => {
     if (!pwModal) return;
     const { mode, noteId } = pwModal;
     if (!noteId) return;
     setPwError('');
 
     if (mode === 'unlock') {
-      if (!checkPw(noteId, pwInput)) { setPwError('Incorrect password'); return; }
+      if (!(await checkPw(noteId, pwInput))) { setPwError('Incorrect password'); return; }
       setPwModal(null);
       const note = notes.find(n => n.id === noteId);
       if (!note) return;
@@ -185,17 +198,17 @@ export default function Notes({ notes, onUpdate, onBack }: NotesProps) {
     if (mode === 'set') {
       if (pwInput.length < 6) { setPwError('At least 6 characters required'); return; }
       if (pwInput !== pwConfirm) { setPwError('Passwords do not match'); return; }
-      setPw(noteId, pwInput);
+      await setPw(noteId, pwInput);
       setPwModal(null);
       toast.success('Password set');
       return;
     }
     if (mode === 'change') {
       // pwInput = current pw, pwConfirm = new pw (blank = remove)
-      if (!checkPw(noteId, pwInput)) { setPwError('Current password incorrect'); return; }
-      if (!pwConfirm) { setPw(noteId, null); setPwModal(null); toast.success('Password removed'); return; }
+      if (!(await checkPw(noteId, pwInput))) { setPwError('Current password incorrect'); return; }
+      if (!pwConfirm) { clearPw(noteId); setPwModal(null); toast.success('Password removed'); return; }
       if (pwConfirm.length < 6) { setPwError('New password must be at least 6 characters'); return; }
-      setPw(noteId, pwConfirm);
+      await setPw(noteId, pwConfirm);
       setPwModal(null);
       toast.success('Password updated');
     }
@@ -428,7 +441,7 @@ export default function Notes({ notes, onUpdate, onBack }: NotesProps) {
       </header>
 
       {/* Editor body */}
-      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' as any }}>
+      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="max-w-2xl mx-auto px-5 pb-16" style={{ paddingTop: '1.5rem' }}>
           {/* Title with left accent */}
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.875rem' }}>

@@ -1,14 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Pencil, X, Download, Upload, Trash2, ChevronRight, Sun, Moon, Monitor, LogOut, Cloud, Lock, LockOpen, Fingerprint } from 'lucide-react';
-import { isPinSet, setPin, removePin, verifyPin, PinNumpad } from './PinLock';
+import { Pencil, X, Download, Upload, LogOut, Cloud, Lock, LockOpen, Fingerprint } from 'lucide-react';
+import { isPinSet, setPin, removePin, verifyPin, getLockRemainingMs, PinNumpad } from './PinLock';
 import { isBiometricEnabled, setBiometricEnabled } from '../utils/biometric';
 import { Switch } from './ui/switch';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import ThemeToggle from './ThemeToggle';
 import type { User } from 'firebase/auth';
 import type { UserProfile, AppSettings, AppStats, AppState } from '../App';
+import { migrateData, type SavedData } from '../utils/migrate';
 
 interface AccountProps {
   userProfile: UserProfile;
@@ -86,7 +87,7 @@ export default function Account({ userProfile, stats, settings, appState, onUpda
 
   const resetPinSheet = () => { setPinSheet(null); setPinDigits(''); setPinFirst(''); setPinError(''); setPinShake(false); };
 
-  const handlePinDigit = (d: string) => {
+  const handlePinDigit = async (d: string) => {
     if (pinShake || pinDigits.length >= 4) return;
     const next = pinDigits + d;
     setPinDigits(next);
@@ -94,9 +95,10 @@ export default function Account({ userProfile, stats, settings, appState, onUpda
 
     // Verify current PIN step (for change/remove flows)
     if (pinStep === 'current') {
-      if (!verifyPin(next)) {
+      if (!(await verifyPin(next))) {
+        const lockSecs = Math.ceil(getLockRemainingMs() / 1000);
         setPinShake(true);
-        setPinError('Incorrect PIN');
+        setPinError(lockSecs > 0 ? `Too many attempts · try again in ${lockSecs}s` : 'Incorrect PIN');
         setTimeout(() => { setPinDigits(''); setPinShake(false); setPinError(''); }, 600);
         return;
       }
@@ -129,7 +131,13 @@ export default function Account({ userProfile, stats, settings, appState, onUpda
       setTimeout(() => { setPinDigits(''); setPinShake(false); setPinError(''); setPinStep('new'); setPinFirst(''); }, 700);
       return;
     }
-    setPin(next);
+    try {
+      await setPin(next);
+    } catch {
+      toast.error('Could not set PIN on this device');
+      resetPinSheet();
+      return;
+    }
     setPinEnabled(true);
     resetPinSheet();
     toast.success(pinSheet === 'change' ? 'PIN updated' : 'App lock enabled');
@@ -193,11 +201,11 @@ export default function Account({ userProfile, stats, settings, appState, onUpda
     const file = e.target.files?.[0]; if (!file) return;
     setImportLoading(true);
     try {
-      const raw = JSON.parse(await file.text());
+      const raw = JSON.parse(await file.text()) as SavedData;
       if (!raw.habits || !Array.isArray(raw.habits)) throw new Error('Invalid format');
       await new Promise(r => setTimeout(r, 500));
       const migrated: Partial<AppState> = {
-        habits: (raw.habits || []).map((h: any) => ({ ...h, bestStreak: h.bestStreak ?? h.streak ?? 0 })),
+        habits: (raw.habits || []).map(h => ({ ...h, bestStreak: h.bestStreak ?? h.streak ?? 0 })),
         expenses: raw.expenses || [], budgets: raw.budgets || [], notes: raw.notes || [],
         savedCounts: raw.savedCounts || [],
         focusSessions: raw.focusSessions || [], reminders: raw.reminders || [],
@@ -206,8 +214,10 @@ export default function Account({ userProfile, stats, settings, appState, onUpda
         journalSettings: raw.journalSettings || undefined,
         lastSeenAchievements: raw.lastSeenAchievements ?? 0,
       };
-      if (raw.userProfile) migrated.userProfile = { name: raw.userProfile.name || 'User', avatar: raw.userProfile.avatar || 'default', joinDate: raw.userProfile.joinDate || new Date().toISOString(), bio: raw.userProfile.bio || '', location: raw.userProfile.location || '', preferences: { notifications: true, language: 'en', currency: 'INR', ...raw.userProfile.preferences } };
-      if (raw.settings) migrated.settings = { theme: 'system', fontSize: 'medium', currency: 'INR', language: 'en', notifications: { habits: true, budgets: true, reminders: true, achievements: true }, privacy: { analytics: false, crashReports: true, dataSharing: false }, advanced: { autoBackup: false, compactView: false, animations: true }, ...raw.settings };
+      // Reuse the same defaulting/migration rules as normal loading; only touch profile/settings if present
+      const normalized = migrateData(raw);
+      if (raw.userProfile) migrated.userProfile = normalized.userProfile;
+      if (raw.settings) migrated.settings = normalized.settings;
       onUpdate(migrated);
       toast.success('Data imported successfully');
     } catch { toast.error('Import failed — check file format'); }

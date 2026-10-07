@@ -2,6 +2,7 @@ import { hapticTap } from '../utils/haptic';
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Home, TrendingUp, User, BookOpen } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { TabScreen } from '../App';
 
 interface BottomNavigationProps {
@@ -10,7 +11,7 @@ interface BottomNavigationProps {
   newAchievements: number;
 }
 
-const TABS: { id: TabScreen; label: string; Icon: React.FC<any> }[] = [
+const TABS: { id: TabScreen; label: string; Icon: LucideIcon }[] = [
   { id: 'home',         label: 'Home',    Icon: Home       },
   { id: 'journal',      label: 'Journal', Icon: BookOpen   },
   { id: 'achievements', label: 'Journey', Icon: TrendingUp },

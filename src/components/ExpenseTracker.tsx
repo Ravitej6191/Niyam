@@ -1,7 +1,6 @@
 import { hapticTap, hapticSuccess } from '../utils/haptic';
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { toast } from 'sonner';
 import {
@@ -9,9 +8,10 @@ import {
   ArrowLeft, Plus, Trash2, Pencil, TrendingUp, TrendingDown, CreditCard,
   AlertTriangle, Target, Search, X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Expense, Budget } from '../App';
 
-const CATEGORY_ICONS: Record<string, React.FC<{ size?: number; color?: string; strokeWidth?: number }>> = {
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
   'utensils': Utensils, 'car': Car, 'shopping-bag': ShoppingBag, 'film': Film,
   'zap': Zap, 'heart-pulse': HeartPulse, 'plane': Plane, 'book-open': BookOpen, 'package': Package,
 };
@@ -135,7 +135,7 @@ export default function ExpenseTracker({ expenses, budgets, onUpdate, onBack, cu
   const [bdgWarn, setBdgWarn] = useState<{ show: boolean; msg: string; expense: Expense | null; isEdit: boolean }>({ show: false, msg: '', expense: null, isEdit: false });
 
   const defE = () => ({ amount: '', description: '', category: '', date: new Date().toISOString().split('T')[0] });
-  const defB = () => ({ name: '', amount: '', period: 'monthly' as const, category: '', color: '#B78E79' });
+  const defB = () => ({ name: '', amount: '', period: 'monthly' as 'weekly' | 'monthly', category: '', color: '#B78E79' });
 
   const [newE, setNewE] = useState(defE());
   const [editE, setEditE] = useState<Expense | null>(null);
@@ -702,7 +702,7 @@ export default function ExpenseTracker({ expenses, budgets, onUpdate, onBack, cu
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setBdgWarn(p => ({ ...p, show: false }))}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (bdgWarn.expense) { bdgWarn.isEdit ? doUpdateExpense(bdgWarn.expense) : doAddExpense(bdgWarn.expense); } }}>
+            <AlertDialogAction onClick={() => { if (bdgWarn.expense) { if (bdgWarn.isEdit) doUpdateExpense(bdgWarn.expense); else doAddExpense(bdgWarn.expense); } }}>
               {bdgWarn.isEdit ? 'Update Anyway' : 'Add Anyway'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -737,7 +737,9 @@ function Sheet({ title, children, onClose }: { title: string; children: React.Re
   );
 }
 
-function Btn({ onClick, children, variant = 'primary', disabled = false, color }: any) {
+function Btn({ onClick, children, variant = 'primary', disabled = false, color }: {
+  onClick?: () => void; children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost'; disabled?: boolean; color?: string;
+}) {
   return (
     <motion.button whileTap={{ scale: 0.96 }} onClick={onClick} disabled={disabled}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem', padding: '0 1.125rem', height: 42, borderRadius: '0.75rem',

@@ -37,7 +37,8 @@ export const promptBiometric = async (): Promise<'success' | 'cancel' | 'error'>
       maxAttempts: 3,
     });
     return 'success';
-  } catch (e: any) {
+  } catch (err) {
+    const e = err as { code?: number; errorCode?: number };
     const code = e?.code ?? e?.errorCode ?? -1;
     // USER_CANCEL = 16, APP_CANCEL = 11, SYSTEM_CANCEL = 15
     if (

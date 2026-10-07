@@ -7,12 +7,13 @@ import {
   Brain, Sword, Lock, TrendingUp, CheckCircle2,
   Hash, CreditCard, StickyNote, Check, Wind, Smile, NotebookPen,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { ALL_ACHIEVEMENTS, type AppStats, type AppState } from '../App';
 import { LEVELS, XP_SOURCES, getLevelProgress, computeXPBreakdown } from '../xp';
 
 interface Props { stats: AppStats; appState: AppState; }
 
-const ICON_MAP: Record<string, React.FC<any>> = {
+const ICON_MAP: Record<string, LucideIcon> = {
   'leaf': Leaf, 'zap': Zap, 'flame': Flame, 'gem': Gem, 'crown': Crown,
   'coins': Coins, 'bar-chart': BarChart2, 'target': Target, 'file-text': FileText,
   'book-open': BookOpen, 'calendar': Calendar, 'calendar-days': CalendarDays,
@@ -22,13 +23,13 @@ const ICON_MAP: Record<string, React.FC<any>> = {
   'wind': Wind, 'smile': Smile, 'notebook-pen': NotebookPen,
 };
 
-const SOURCE_ICONS: Record<string, React.FC<any>> = {
+const SOURCE_ICONS: Record<string, LucideIcon> = {
   habits: CheckCircle2, focus: Headphones, breathing: Wind,
   notes: StickyNote, moods: Smile, expenses: CreditCard, counters: Hash,
   journal: BookOpen,
 };
 
-const LEVEL_ICONS: Record<string, React.FC<any>> = {
+const LEVEL_ICONS: Record<string, LucideIcon> = {
   leaf: Leaf, star: Star, sword: Sword, crown: Crown, gem: Gem,
 };
 
@@ -58,7 +59,7 @@ type FilterId = typeof FILTERS[number]['id'];
 // ── Circular SVG ring ─────────────────────────────────────────────────────────
 const R = 42, CIRC = 2 * Math.PI * R;
 
-function ProgressRing({ pct, color }: { pct: number; color: string }) {
+function ProgressRing({ pct }: { pct: number; color?: string }) {
   return (
     <div style={{ position: 'relative', width: 108, height: 108, flexShrink: 0 }}>
       <svg width="108" height="108" viewBox="0 0 108 108" style={{ transform: 'rotate(-90deg)' }}>

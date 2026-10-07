@@ -5,7 +5,6 @@ import { Plus, Pencil, Trash2, Check, Flame, X, Zap } from 'lucide-react';
 import { hapticTap, hapticSuccess } from '../utils/haptic';
 import type { Habit } from '../App';
 
-const PRIMARY = 'var(--mod-habits)';
 const PRIMARY_RAW = '#7B96B0';
 
 const HABIT_ICONS = [

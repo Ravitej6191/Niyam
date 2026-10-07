@@ -30,7 +30,8 @@ export default function AuthGate({ ready = false, onGuestMode }: { ready?: boole
     setLoading(true);
     try {
       await signInWithGoogle();
-    } catch (e: any) {
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
       console.warn('Google sign-in error:', e?.code, e?.message, e);
       const cancelled = e?.code === 'auth/cancelled-by-user' || e?.message === 'Sign in action cancelled.';
       if (!cancelled) {

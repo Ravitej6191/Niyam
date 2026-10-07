@@ -111,8 +111,8 @@ export function getCurrentLevel(xp: number): LevelDef & { idx: number } {
 
 // ── Progress to next level ────────────────────────────────────────────────────
 export interface LevelProgress {
-  current:         LevelDef;
-  next:            LevelDef | null;
+  current:         LevelDef & { idx: number };
+  next:           LevelDef | null;
   progressPct:     number;         // 0–100
   xpIntoLevel:     number;
   xpNeededForNext: number | null;
@@ -120,7 +120,7 @@ export interface LevelProgress {
 
 export function getLevelProgress(xp: number): LevelProgress {
   const info    = getCurrentLevel(xp);
-  const current = LEVELS[info.idx];
+  const current = info;
   const next    = LEVELS[info.idx + 1] ?? null;
   if (!next) {
     return { current, next: null, progressPct: 100, xpIntoLevel: xp - current.minXP, xpNeededForNext: null };

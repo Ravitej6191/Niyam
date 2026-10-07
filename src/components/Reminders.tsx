@@ -4,9 +4,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { ArrowLeft, Bell, BellOff, Plus, X, Pencil, Trash2, BellRing, Volume2, ChevronRight } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { Capacitor } from '@capacitor/core';
-import { App } from '@capacitor/app';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { Reminder } from '../App';
+
+// Local native plugin: android/.../NotificationSettingsPlugin.java
+const NotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
 
 const PRIMARY_RAW = '#9F8ABD';
 const IS_NATIVE   = Capacitor.isNativePlatform();
@@ -191,10 +193,7 @@ export default function Reminders({ reminders, onUpdate, onBack }: Props) {
       return;
     }
     try {
-      const { id } = await App.getInfo(); // id = package name e.g. com.niyam.app
-      await App.openUrl({
-        url: `intent:#Intent;action=android.settings.APP_NOTIFICATION_SETTINGS;S.android.provider.Settings.EXTRA_APP_PACKAGE=${id};end`,
-      });
+      await NotificationSettings.open();
     } catch {
       toast.info('Go to Settings → Apps → Niyam → Notifications to change the alarm sound', { duration: 7000 });
     }

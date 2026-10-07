@@ -2,19 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Fingerprint } from 'lucide-react';
 import { hapticTap, hapticError, hapticSuccess } from '../utils/haptic';
+import { isPinSet, setPin, verifyPin, removePin, getLockRemainingMs, getFailedAttempts } from '../utils/pin';
 
-const PIN_KEY = 'niyam-pin-hash';
-const SALT = ':niyam-v6-lock';
 const PRIMARY = '#B78E79';
 
-// ── PIN utilities (exported for Account.tsx) ─────────────────────────────────
-function hashPin(pin: string): string {
-  return btoa(pin + SALT);
-}
-export const isPinSet = (): boolean => !!localStorage.getItem(PIN_KEY);
-export const verifyPin = (pin: string): boolean => localStorage.getItem(PIN_KEY) === hashPin(pin);
-export const setPin = (pin: string): void => localStorage.setItem(PIN_KEY, hashPin(pin));
-export const removePin = (): void => localStorage.removeItem(PIN_KEY);
+// PIN logic lives in utils/pin.ts; re-exported here for existing imports
+export { isPinSet, setPin, verifyPin, removePin, getLockRemainingMs, getFailedAttempts };
 
 // ── Lock Screen ───────────────────────────────────────────────────────────────
 interface Props {
@@ -27,7 +20,7 @@ export default function PinLock({ onUnlock, biometricEnabled, onBiometricTap }: 
   const [digits, setDigits]     = useState('');
   const [shake, setShake]       = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const [lockedUntil, setLockedUntil] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(() => { const r = getLockRemainingMs(); return r > 0 ? Date.now() + r : 0; });
   const [now, setNow]           = useState(Date.now());
   const tickRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -54,20 +47,22 @@ export default function PinLock({ onUnlock, biometricEnabled, onBiometricTap }: 
     const next = digits + d;
     setDigits(next);
     if (next.length === 4) {
-      if (verifyPin(next)) {
-        hapticSuccess();
-        onUnlock();
-      } else {
+      verifyPin(next).then(ok => {
+        if (ok) {
+          hapticSuccess();
+          onUnlock();
+          return;
+        }
         hapticError();
         setShake(true);
-        const newAttempts = attempts + 1;
-        setAttempts(newAttempts);
-        if (newAttempts >= 5) {
-          setLockedUntil(Date.now() + 30000);
+        setAttempts(getFailedAttempts());
+        const remaining = getLockRemainingMs();
+        if (remaining > 0) {
+          setLockedUntil(Date.now() + remaining);
           setNow(Date.now());
         }
         setTimeout(() => { setDigits(''); setShake(false); }, 600);
-      }
+      });
     }
   };
 
@@ -134,7 +129,7 @@ export default function PinLock({ onUnlock, biometricEnabled, onBiometricTap }: 
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', width: '100%', maxWidth: 300, opacity: isLocked ? 0.4 : 1, pointerEvents: isLocked ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
             {KEYS.map((k, idx) => {
-              if (k === '') return <div key={idx} />;
+              if (k === '') return <div key={`blank-${idx}`} />;
               if (k === 'del') return (
                 <motion.button key="del" whileTap={{ scale: 0.88 }} onClick={handleDelete}
                   style={{ height: 68, borderRadius: '1rem', background: 'var(--muted)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 68 }}>
@@ -142,7 +137,7 @@ export default function PinLock({ onUnlock, biometricEnabled, onBiometricTap }: 
                 </motion.button>
               );
               return (
-                <motion.button key={k} whileTap={{ scale: 0.88 }} onClick={() => handleDigit(k)}
+                <motion.button key={`digit-${k}`} whileTap={{ scale: 0.88 }} onClick={() => handleDigit(k)}
                   style={{ height: 68, borderRadius: '1rem', background: 'var(--card)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '1.625rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: "'Rubik', sans-serif", boxShadow: 'var(--shadow-xs)', minHeight: 68 }}>
                   {k}
                 </motion.button>
@@ -216,7 +211,7 @@ export function PinNumpad({ digits, onDigit, onDelete, shake = false, errorDots 
       {/* Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.625rem' }}>
         {KEYS.map((k, idx) => {
-          if (k === '') return <div key={idx} />;
+          if (k === '') return <div key={`blank-${idx}`} />;
           if (k === 'del') return (
             <motion.button key="del" whileTap={{ scale: 0.88 }} onClick={onDelete}
               style={{ height: 58, borderRadius: '0.875rem', background: 'var(--muted)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 58 }}>
@@ -224,7 +219,7 @@ export function PinNumpad({ digits, onDigit, onDelete, shake = false, errorDots 
             </motion.button>
           );
           return (
-            <motion.button key={k} whileTap={{ scale: 0.88 }} onClick={() => onDigit(k)}
+            <motion.button key={`digit-${k}`} whileTap={{ scale: 0.88 }} onClick={() => onDigit(k)}
               style={{ height: 58, borderRadius: '0.875rem', background: 'var(--card)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: '1.5rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: "'Rubik', sans-serif", minHeight: 58 }}>
               {k}
             </motion.button>
